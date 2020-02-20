@@ -10,5 +10,7 @@ Please note 'cx_Oracle' module requires an installation of the Oracle client (In
 
 ## Running
 `python3 export_data.py --help`
+
 `python3 export_data.py normal_export --help`
+
 `python3 export_data.py advanced_export --help`

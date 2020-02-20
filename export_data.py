@@ -63,7 +63,7 @@ def generate_export_file(db_schema,db_table,base_filename,remove_header):
 s3 = boto3.client('s3')
 
 #define main command line group
-@click.command('export_table')
+@click.group()
 @click.option('--db_host', default=None,
     help="Source DB DNS/IP address")
 @click.option('--db_user', default=None,
@@ -72,25 +72,54 @@ s3 = boto3.client('s3')
     help="Source DB password")
 @click.option('--db_service', default=None,
     help="Source DB service name")
+def cli(db_host,db_user,db_pass,db_service):
+    """Utility to export Oracle data to S3"""
+    #Setup global connection
+    if db_host:
+        setup_connection(db_host,db_user,db_pass,db_service)
+
+#define normal export command
+@cli.command('normal_export')
 @click.option('--db_schema', default=None,
     help="Source DB schema name")
 @click.option('--db_table', default=None,
     help="Source DB table name")
 @click.option('--local_path', default=None,
     help="Local path for temporary export")
+@click.option('--remove_header', default=False, is_flag=True,
+    help="Remove header row")    
+def normal_export(db_schema,db_table,local_path,remove_header):
+    #Define base file name
+    base_filename = "{0}_{1}".format(db_schema,db_table)
+    if local_path:
+        base_filename = "{0}/{1}".format(local_path,base_filename)
+
+    #Generate normal export file:
+    generate_export_file(db_schema,db_table,base_filename,remove_header)
+    
+    #Close global connection
+    db_con.close()
+    return
+
+#define advanced export command
+@cli.command('advanced_export')
+@click.option('--db_schema', default=None,
+    help="Source DB schema name")
+@click.option('--db_table', default=None,
+    help="Source DB table name")
+@click.option('--local_path', default=None,
+    help="Local path for temporary export")
+@click.option('--remove_header', default=False, is_flag=True,
+    help="Remove header row")
 @click.option('--generate_ddl', default=False, is_flag=True,
     help="Generate DDL file")
 @click.option('--export_data', default=False, is_flag=True,
-    help="Generate export file")
-@click.option('--remove_header', default=False, is_flag=True,
-    help="Remove header row")
-def cli(db_host,db_user,db_pass,db_service,db_schema,db_table,local_path,generate_ddl,export_data,remove_header):
-    """Utility to export Oracle data to S3"""
-    #Setup global connection
-    setup_connection(db_host,db_user,db_pass,db_service)
-
+    help="Generate export file")    
+def advanced_export(db_schema,db_table,local_path,generate_ddl,export_data,remove_header):
     #Define base file name
     base_filename = "{0}_{1}".format(db_schema,db_table)
+    if local_path:
+        base_filename = "{0}/{1}".format(local_path,base_filename)
 
     #Generate DDL file
     if generate_ddl:
@@ -103,6 +132,7 @@ def cli(db_host,db_user,db_pass,db_service,db_schema,db_table,local_path,generat
     #Close global connection
     db_con.close()
     return
+
 #main script
 if __name__ == '__main__':
     cli()

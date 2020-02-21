@@ -20,7 +20,7 @@ def setup_connection(db_host,db_user,db_pass,db_service):
 
     return
 
-#define function that generates dictionary based on options input 
+#define function that generates dictionary based on multiple options input 
 def generate_options_dictionary(options_input):
     options_dict = {}
     if options_input:
@@ -32,6 +32,20 @@ def generate_options_dictionary(options_input):
                 options_dict[key_pair[0]] = True
 
     return options_dict
+
+#define function to copy local file to s3
+def move_file_to_s3(local_path,input_file,s3_options_dict):
+    #define S3 options from dictionary
+    s3_bucket = s3_options_dict.get('s3_bucket',False)
+    s3_path = s3_options_dict.get('s3_path',False)
+
+    if s3_bucket:
+        s3_target = "{0}/{1}".format(s3_path,input_file) if s3_path else "{0}".format(input_file)
+        print(s3_target)
+        #s3.upload_file('{0}/{1}'.format(local_path,input_file),s3_bucket,s3_target)
+        #os.remove('{0}/{1}}'.format(local_path,input_file))
+
+    return
 
 #generate ddl file
 def generate_ddl_file(db_schema,db_table,base_filename,advanced_options_dict):
@@ -59,7 +73,7 @@ def generate_ddl_file(db_schema,db_table,base_filename,advanced_options_dict):
     return ddl_filename
 
 #generate export file
-def generate_export_file(db_schema,db_table,base_filename,advanced_options_dict):
+def generate_export_file(db_schema,db_table,base_filename,local_path,advanced_options_dict,s3_options_dict):
     #define advanced options from dictionary
     exclude_header = advanced_options_dict.get('exclude_header',False)
     exclude_data = advanced_options_dict.get('exclude_data',False)
@@ -99,6 +113,11 @@ def generate_export_file(db_schema,db_table,base_filename,advanced_options_dict)
         export_file.close()
         data_cursor.close()
         print("File {0} created".format(export_filename))
+
+        #copy file to s3
+        move_file_to_s3(local_path,export_filename,s3_options_dict)
+
+        #delete local file
     else:
         export_filename = ''
 
@@ -107,26 +126,23 @@ def generate_export_file(db_schema,db_table,base_filename,advanced_options_dict)
 #define function to call all required file genereation functions
 def generate_files(db_schema,db_table,local_path,s3_options,advanced_options):
     base_filename = define_base_filename(db_schema,db_table,local_path)
-    
+    local_path = local_path if local_path else '.'
+
     #define advanced options dictionary
     advanced_options_dict = generate_options_dictionary(advanced_options)
 
     #define S3 options dictionary
     s3_options_dict = generate_options_dictionary(s3_options)
 
-    #define S3 options from dictionary
-    s3_bucket = s3_options_dict.get('s3_bucket',False)
-    s3_path = s3_options_dict.get('s3_path',False)
-    iam_role = s3_options_dict.get('iam_role',False)
-
     #call function to create ddl export
     generate_ddl_file(db_schema,db_table,base_filename,advanced_options_dict)
     
     #call function to create data/header export
-    generate_export_file(db_schema,db_table,base_filename,advanced_options_dict) 
+    generate_export_file(db_schema,db_table,base_filename,local_path,advanced_options_dict,s3_options_dict) 
 
     #Close global connection
     db_con.close()
+
     return
 
 #define s3 object
@@ -158,7 +174,7 @@ def cli(db_host,db_user,db_pass,db_service):
 @click.option('--local_path', default=None,
     help="Local path for temporary export")
 @click.option('--s3_options', default=None,
-    help="S3 related options (separated by comma):\n bucket_name=<s3_bucket>\n iam_role=<role_name>\n s3_path=<path>")
+    help="S3 related options (separated by comma):\n bucket_name=<s3_bucket>\n s3_path=<path>")
 @click.option('--advanced_options', default=None,
     help="Advanced options (separated by comma):\n generate_ddl\n exclude_data\n exclude_header")
 def export(db_schema,db_table,local_path,s3_options,advanced_options):

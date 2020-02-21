@@ -23,17 +23,21 @@ def setup_connection(db_host,db_user,db_pass,db_service):
 #define function that generates dictionary based on options input 
 def generate_options_dictionary(options_input):
     options_dict = {}
-    for option in options_input.split(','):
-        key_pair = option.split('=')
-        if len(key_pair) == int(2): 
-            options_dict[key_pair[0]] = key_pair[1]
-        elif len(key_pair) == int(1):
-            options_dict[key_pair[0]] = True
+    if options_input:
+        for option in options_input.split(','):
+            key_pair = option.split('=')
+            if len(key_pair) == int(2): 
+                options_dict[key_pair[0]] = key_pair[1]
+            elif len(key_pair) == int(1):
+                options_dict[key_pair[0]] = True
 
     return options_dict
 
 #generate ddl file
-def generate_ddl_file(db_schema,db_table,base_filename,generate_ddl):
+def generate_ddl_file(db_schema,db_table,base_filename,advanced_options_dict):
+    #define advanced options from dictionary
+    generate_ddl = advanced_options_dict.get('generate_ddl',False)
+
     if generate_ddl:
         print("Generating DDL file")
         ddl_filename = "{0}.sql".format(base_filename)
@@ -55,7 +59,11 @@ def generate_ddl_file(db_schema,db_table,base_filename,generate_ddl):
     return ddl_filename
 
 #generate export file
-def generate_export_file(db_schema,db_table,base_filename,exclude_data,exclude_header):
+def generate_export_file(db_schema,db_table,base_filename,advanced_options_dict):
+    #define advanced options from dictionary
+    exclude_header = advanced_options_dict.get('exclude_header',False)
+    exclude_data = advanced_options_dict.get('exclude_data',False)
+
     if exclude_data == False or exclude_header == False:
         print("Generating export file")
         export_filename = "{0}.csv".format(base_filename)
@@ -101,25 +109,24 @@ def generate_files(db_schema,db_table,local_path,s3_options,advanced_options):
     base_filename = define_base_filename(db_schema,db_table,local_path)
     
     #define advanced options dictionary
-    if advanced_options:
-        advanced_options_dict = generate_options_dictionary(advanced_options)
-        #define advanced options from dictionary
-        generate_ddl = advanced_options_dict.get('generate_ddl',False)
-        exclude_header = advanced_options_dict.get('exclude_header',False)
-        exclude_data = advanced_options_dict.get('exclude_data',False)
+    advanced_options_dict = generate_options_dictionary(advanced_options)
 
     #define S3 options dictionary
-    if s3_options:
-        s3_options_dict = generate_options_dictionary(s3_options)
+    s3_options_dict = generate_options_dictionary(s3_options)
 
-        print(s3_options_dict)
+    #define S3 options from dictionary
+    s3_bucket = s3_options_dict.get('s3_bucket',False)
+    s3_path = s3_options_dict.get('s3_path',False)
+    iam_role = s3_options_dict.get('iam_role',False)
 
     #call function to create ddl export
-    generate_ddl_file(db_schema,db_table,base_filename,generate_ddl)
+    generate_ddl_file(db_schema,db_table,base_filename,advanced_options_dict)
     
     #call function to create data/header export
-    generate_export_file(db_schema,db_table,base_filename,exclude_data,exclude_header) 
+    generate_export_file(db_schema,db_table,base_filename,advanced_options_dict) 
 
+    #Close global connection
+    db_con.close()
     return
 
 #define s3 object
@@ -158,8 +165,6 @@ def export(db_schema,db_table,local_path,s3_options,advanced_options):
     #Generate files
     generate_files(db_schema,db_table,local_path,s3_options,advanced_options)
 
-    #Close global connection
-    db_con.close()
     return
 
 #main script

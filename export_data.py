@@ -20,6 +20,18 @@ def setup_connection(db_host,db_user,db_pass,db_service):
 
     return
 
+#define function that generates dictionary based on options input 
+def generate_options_dictionary(options_input):
+    options_dict = {}
+    for option in options_input.split(','):
+        key_pair = option.split('=')
+        if len(key_pair) == int(2): 
+            options_dict[key_pair[0]] = key_pair[1]
+        elif len(key_pair) == int(1):
+            options_dict[key_pair[0]] = True
+
+    return options_dict
+
 #generate ddl file
 def generate_ddl_file(db_schema,db_table,base_filename,generate_ddl):
     if generate_ddl:
@@ -85,14 +97,22 @@ def generate_export_file(db_schema,db_table,base_filename,exclude_data,exclude_h
     return export_filename
 
 #define function to call all required file genereation functions
-def generate_files(db_schema,db_table,local_path,advanced):
+def generate_files(db_schema,db_table,local_path,s3_options,advanced_options):
     base_filename = define_base_filename(db_schema,db_table,local_path)
     
-    #Define advanced options
-    advanced_options = advanced.split(',') if advanced else ['']
-    generate_ddl = True if 'generate_ddl' in advanced_options else False
-    exclude_header = True if 'exclude_header' in advanced_options else False
-    exclude_data = True if 'exclude_data' in advanced_options else False
+    #define advanced options dictionary
+    if advanced_options:
+        advanced_options_dict = generate_options_dictionary(advanced_options)
+        #define advanced options from dictionary
+        generate_ddl = advanced_options_dict.get('generate_ddl',False)
+        exclude_header = advanced_options_dict.get('exclude_header',False)
+        exclude_data = advanced_options_dict.get('exclude_data',False)
+
+    #define S3 options dictionary
+    if s3_options:
+        s3_options_dict = generate_options_dictionary(s3_options)
+
+        print(s3_options_dict)
 
     #call function to create ddl export
     generate_ddl_file(db_schema,db_table,base_filename,generate_ddl)
@@ -130,11 +150,13 @@ def cli(db_host,db_user,db_pass,db_service):
     help="Source DB table name")
 @click.option('--local_path', default=None,
     help="Local path for temporary export")
-@click.option('--advanced', default=None,
+@click.option('--s3_options', default=None,
+    help="S3 related options (separated by comma):\n bucket_name=<s3_bucket>\n iam_role=<role_name>\n s3_path=<path>")
+@click.option('--advanced_options', default=None,
     help="Advanced options (separated by comma):\n generate_ddl\n exclude_data\n exclude_header")
-def export(db_schema,db_table,local_path,advanced):
+def export(db_schema,db_table,local_path,s3_options,advanced_options):
     #Generate files
-    generate_files(db_schema,db_table,local_path,advanced)
+    generate_files(db_schema,db_table,local_path,s3_options,advanced_options)
 
     #Close global connection
     db_con.close()

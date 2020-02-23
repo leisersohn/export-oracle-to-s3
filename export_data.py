@@ -5,13 +5,6 @@ import os
 import click
 from dateutil.relativedelta import relativedelta
 
-#define base filename
-def define_base_filename(db_schema,db_table,local_path):
-    base_filename = "{0}_{1}".format(db_schema,db_table)
-    if local_path:
-        base_filename = "{0}/{1}".format(local_path,base_filename)
-
-    return base_filename
 
 #define db connection object
 def setup_connection(db_host,db_user,db_pass,db_service):
@@ -48,32 +41,32 @@ def move_file_to_s3(local_path,input_file,s3_options_dict):
     return
 
 #generate ddl file
-def generate_ddl_file(db_schema,db_table,base_filename,advanced_options_dict):
+def generate_ddl_file(db_schema,db_table,local_path,base_filename,advanced_options_dict):
     #define advanced options from dictionary
     generate_ddl = advanced_options_dict.get('generate_ddl',False)
 
     if generate_ddl:
         print("Generating DDL file")
         ddl_filename = "{0}.sql".format(base_filename)
-
+        
         sql_ddl = "select dbms_metadata.get_ddl('TABLE','{1}') as table_ddl from all_tables where owner = '{0}' and table_name='{1}'".format(db_schema,db_table)
         ddl_cursor = db_con.cursor()
         ddl_cursor.execute(sql_ddl)
 
-        ddl_file = open(ddl_filename,"w")
+        ddl_file = open("{0}/{1}".format(local_path,ddl_filename),"w")
         for row in ddl_cursor.fetchone():
             ddl_file.write(str(row))
         
         ddl_file.close()
         ddl_cursor.close()
-        print("File {0} created".format(ddl_filename))
+        print("File {0}/{1} created".format(local_path,ddl_filename))
     else:
         ddl_filename =  ''
 
     return ddl_filename
 
 #generate export file
-def generate_export_file(db_schema,db_table,base_filename,local_path,advanced_options_dict,s3_options_dict):
+def generate_export_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict):
     #define advanced options from dictionary
     exclude_header = advanced_options_dict.get('exclude_header',False)
     exclude_data = advanced_options_dict.get('exclude_data',False)
@@ -94,7 +87,7 @@ def generate_export_file(db_schema,db_table,base_filename,local_path,advanced_op
         data_cursor.execute(sql_data)
 
         #initalize file
-        export_file = open(export_filename,"w")
+        export_file = open("{0}/{1}".format(local_path,export_filename),"w")
         writer = csv.writer(export_file, dialect='excel')
         
         #add header
@@ -112,10 +105,10 @@ def generate_export_file(db_schema,db_table,base_filename,local_path,advanced_op
         #finish by closing file & cursor
         export_file.close()
         data_cursor.close()
-        print("File {0} created".format(export_filename))
+        print("File {0}/{1} created".format(local_path,export_filename))
 
         #copy file to s3
-        move_file_to_s3(local_path,export_filename,s3_options_dict)
+        #move_file_to_s3(local_path,export_filename,s3_options_dict)
 
         #delete local file
     else:
@@ -124,8 +117,9 @@ def generate_export_file(db_schema,db_table,base_filename,local_path,advanced_op
     return export_filename
 
 #define function to call all required file genereation functions
-def generate_files(db_schema,db_table,local_path,s3_options,advanced_options):
-    base_filename = define_base_filename(db_schema,db_table,local_path)
+def generate_files(db_schema,db_table,local_path,s3_options,advanced_options,date_options):
+    #define filename & path
+    base_filename = "{0}_{1}".format(db_schema,db_table)
     local_path = local_path if local_path else '.'
 
     #define advanced options dictionary
@@ -135,10 +129,10 @@ def generate_files(db_schema,db_table,local_path,s3_options,advanced_options):
     s3_options_dict = generate_options_dictionary(s3_options)
 
     #call function to create ddl export
-    generate_ddl_file(db_schema,db_table,base_filename,advanced_options_dict)
+    generate_ddl_file(db_schema,db_table,local_path,base_filename,advanced_options_dict)
     
     #call function to create data/header export
-    generate_export_file(db_schema,db_table,base_filename,local_path,advanced_options_dict,s3_options_dict) 
+    generate_export_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict) 
 
     #Close global connection
     db_con.close()
@@ -177,9 +171,11 @@ def cli(db_host,db_user,db_pass,db_service):
     help="S3 related options (separated by comma):\n bucket_name=<s3_bucket>\n s3_path=<path>")
 @click.option('--advanced_options', default=None,
     help="Advanced options (separated by comma):\n generate_ddl\n exclude_data\n exclude_header")
-def export(db_schema,db_table,local_path,s3_options,advanced_options):
+@click.option('--date_options', default=None,
+    help="Date options (separated by comma):\n date_column=<column_name>\n start_date=<YYYY-MM-DD>\n end_date=<YYYY-MM-DD>\n split_period=<day/month/year>\n convert_to_julian")
+def export(db_schema,db_table,local_path,s3_options,advanced_options,date_options):
     #Generate files
-    generate_files(db_schema,db_table,local_path,s3_options,advanced_options)
+    generate_files(db_schema,db_table,local_path,s3_options,advanced_options,date_options)
 
     return
 

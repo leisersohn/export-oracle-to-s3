@@ -3,6 +3,7 @@ import cx_Oracle
 import boto3
 import os
 import click
+import datetime
 from dateutil.relativedelta import relativedelta
 
 
@@ -34,14 +35,17 @@ def move_file_to_s3(local_path,input_file,s3_options_dict):
 
     if s3_bucket:
         s3_target = "{0}/{1}".format(s3_path,input_file) if s3_path else "{0}".format(input_file)
-        print(s3_target)
-        #s3.upload_file('{0}/{1}'.format(local_path,input_file),s3_bucket,s3_target)
-        #os.remove('{0}/{1}}'.format(local_path,input_file))
+        print("Moving file: {0}/{1} to s3 bucket: {2}/{3}...".format(local_path,input_file,s3_bucket,s3_target))
+        s3.upload_file('{0}/{1}'.format(local_path,input_file),s3_bucket,s3_target)
+        print("Move completed")
+        print("Deleting local file: {0}/{1}...".format(local_path,input_file))
+        os.remove('{0}/{1}'.format(local_path,input_file))
+        print("Deletion completed")
 
     return
 
 #generate ddl file
-def generate_ddl_file(db_schema,db_table,local_path,base_filename,advanced_options_dict):
+def generate_ddl_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict):
     #define advanced options from dictionary
     generate_ddl = advanced_options_dict.get('generate_ddl',False)
 
@@ -60,57 +64,137 @@ def generate_ddl_file(db_schema,db_table,local_path,base_filename,advanced_optio
         ddl_file.close()
         ddl_cursor.close()
         print("File {0}/{1} created".format(local_path,ddl_filename))
+
+        #move file to s3
+        move_file_to_s3(local_path,ddl_filename,s3_options_dict)
+
     else:
         ddl_filename =  ''
 
     return ddl_filename
 
 #generate export file
-def generate_export_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict):
+def generate_export_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict,date_options_dict):
     #define advanced options from dictionary
     exclude_header = advanced_options_dict.get('exclude_header',False)
     exclude_data = advanced_options_dict.get('exclude_data',False)
 
+    #define date options from dictionary
+    date_column = date_options_dict.get('date_column',False)
+    start_date = date_options_dict.get('start_date',False)
+    end_date = date_options_dict.get('end_date',False)
+    split_period = date_options_dict.get('split_period',False)
+    convert_to_julian = date_options_dict.get('convert_to_julian',False)
+
     if exclude_data == False or exclude_header == False:
-        print("Generating export file")
-        export_filename = "{0}.csv".format(base_filename)
+        if date_column or start_date or end_date or split_period or convert_to_julian:
+            if date_column and start_date and end_date and split_period:
+                print("Starting export process using date options...")
+                export_filename = ''
 
-        #set where clause for when exporting only metadata
-        if exclude_data:
-            where_clause = '1=0'
+                #set initial dates
+                start_date = datetime.datetime.strptime(start_date,'%Y-%m-%d')
+                end_date = datetime.datetime.strptime(end_date,'%Y-%m-%d')
+
+                #set period_delta based on input
+                if split_period == 'days':
+                    period_delta = relativedelta(days=+1)
+                elif split_period == 'months':
+                    period_delta = relativedelta(months=+1)
+                elif split_period == 'years':
+                    period_delta = relativedelta(years=+1)
+                else:
+                    period_delta = ''
+        
+                #loop through the dates based on period_delta
+                while start_date <= end_date:
+                    process_date_start = datetime.datetime.strftime(start_date,'%Y%m%d')
+                    process_date_end = datetime.datetime.strftime(start_date+period_delta,'%Y%m%d')
+
+                    export_filename = "{0}_{1}.csv".format(base_filename,process_date_start)
+
+                    #set where clause for when exporting only metadata
+                    if exclude_data:
+                        where_clause = '1=0'
+                    else:
+                        where_clause = '1=1'
+
+                    #set SQL cursor
+                    if convert_to_julian:
+                        sql_data = "select * from {0}.{1} where {2} and {3} >= to_char(to_date({4},'YYYY-MM-DD'),'J') and {3} < to_char(to_date({5},'YYYY-MM-DD'),'J')".format(db_schema,db_table,where_clause,date_column,process_date_start,process_date_end)
+                    else:
+                        sql_data = "select * from {0}.{1} where {2} and {3} >= to_date({4},'YYYY-MM-DD') and {3} < to_date({5},'YYYY-MM-DD')".format(db_schema,db_table,where_clause,date_column,process_date_start,process_date_end)
+
+                    data_cursor = db_con.cursor()
+                    data_cursor.execute(sql_data)
+
+                    #initalize file
+                    export_file = open("{0}/{1}".format(local_path,export_filename),"w")
+                    writer = csv.writer(export_file, dialect='excel')
+                    
+                    #add header
+                    if exclude_header == False:
+                        cols = []
+                        for col in data_cursor.description:
+                            cols.append(col[0])
+                        
+                        writer.writerow(cols)
+
+                    #add data
+                    for row_data in data_cursor:
+                        writer.writerow(row_data)
+
+                    #finish by closing file & cursor
+                    export_file.close()
+                    data_cursor.close()
+                    print("File {0}/{1} created".format(local_path,export_filename))
+
+                    #move file to s3
+                    move_file_to_s3(local_path,export_filename,s3_options_dict)
+
+                    start_date = start_date + period_delta
+            else:
+                print("Date options require input for: date_column, start_date, end_date, split_period")
+                export_filename = ''
         else:
-            where_clause = '1=1'
-        
-        #set SQL cursor
-        sql_data = "select * from {0}.{1} where {2}".format(db_schema,db_table,where_clause)
-        data_cursor = db_con.cursor()
-        data_cursor.execute(sql_data)
+            print("Generating export file")
+            export_filename = "{0}.csv".format(base_filename)
 
-        #initalize file
-        export_file = open("{0}/{1}".format(local_path,export_filename),"w")
-        writer = csv.writer(export_file, dialect='excel')
-        
-        #add header
-        if exclude_header == False:
-            cols = []
-            for col in data_cursor.description:
-                cols.append(col[0])
+            #set where clause for when exporting only metadata
+            if exclude_data:
+                where_clause = '1=0'
+            else:
+                where_clause = '1=1'
             
-            writer.writerow(cols)
+            #set SQL cursor
+            sql_data = "select * from {0}.{1} where {2}".format(db_schema,db_table,where_clause)
+            data_cursor = db_con.cursor()
+            data_cursor.execute(sql_data)
 
-        #add data
-        for row_data in data_cursor:
-            writer.writerow(row_data)
+            #initalize file
+            export_file = open("{0}/{1}".format(local_path,export_filename),"w")
+            writer = csv.writer(export_file, dialect='excel')
+            
+            #add header
+            if exclude_header == False:
+                cols = []
+                for col in data_cursor.description:
+                    cols.append(col[0])
+                
+                writer.writerow(cols)
 
-        #finish by closing file & cursor
-        export_file.close()
-        data_cursor.close()
-        print("File {0}/{1} created".format(local_path,export_filename))
+            #add data
+            for row_data in data_cursor:
+                writer.writerow(row_data)
 
-        #copy file to s3
-        #move_file_to_s3(local_path,export_filename,s3_options_dict)
+            #finish by closing file & cursor
+            export_file.close()
+            data_cursor.close()
+            print("File {0}/{1} created".format(local_path,export_filename))
 
-        #delete local file
+            #move file to s3
+            move_file_to_s3(local_path,export_filename,s3_options_dict)
+
     else:
         export_filename = ''
 
@@ -128,11 +212,14 @@ def generate_files(db_schema,db_table,local_path,s3_options,advanced_options,dat
     #define S3 options dictionary
     s3_options_dict = generate_options_dictionary(s3_options)
 
+    #define date options dictionary
+    date_options_dict = generate_options_dictionary(date_options)
+
     #call function to create ddl export
-    generate_ddl_file(db_schema,db_table,local_path,base_filename,advanced_options_dict)
+    generate_ddl_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict)
     
     #call function to create data/header export
-    generate_export_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict) 
+    generate_export_file(db_schema,db_table,local_path,base_filename,advanced_options_dict,s3_options_dict,date_options_dict) 
 
     #Close global connection
     db_con.close()
@@ -172,7 +259,7 @@ def cli(db_host,db_user,db_pass,db_service):
 @click.option('--advanced_options', default=None,
     help="Advanced options (separated by comma):\n generate_ddl\n exclude_data\n exclude_header")
 @click.option('--date_options', default=None,
-    help="Date options (separated by comma):\n date_column=<column_name>\n start_date=<YYYY-MM-DD>\n end_date=<YYYY-MM-DD>\n split_period=<day/month/year>\n convert_to_julian")
+    help="Date options (separated by comma):\n date_column=<column_name>\n start_date=<YYYY-MM-DD>\n end_date=<YYYY-MM-DD>\n split_period=<days/months/years>\n convert_to_julian")
 def export(db_schema,db_table,local_path,s3_options,advanced_options,date_options):
     #Generate files
     generate_files(db_schema,db_table,local_path,s3_options,advanced_options,date_options)

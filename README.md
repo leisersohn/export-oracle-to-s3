@@ -33,4 +33,4 @@ Table export using period filter & split (export January-2020 into daily files)
 
 Table export using period filter on julian date & monthly split & extra DDL file & moving all to s3 bucket
 
-`python3 export_data.py --db_host example_host --db_user example_user --db_pass example_pass --db_service example_service export --db_schema example_schema --db_table example_table --advanced_options generate_ddl --s3_options s3_bucket=example_bucket,s3_path=example_bucket_path --date_options date_column=example_column,start_date=2020-01-01,end_date=2020-01-31,split_period=days,convert_to_julian`
+`python3 export_data.py --db_host example_host --db_user example_user --db_pass example_pass --db_service example_service export --db_schema example_schema --db_table example_table --advanced_options generate_ddl --s3_options s3_bucket=example_bucket,s3_path=example_bucket_path --date_options date_column=example_column,start_date=2019-01-01,end_date=2019-12-01,split_period=months,convert_to_julian`

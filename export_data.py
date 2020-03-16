@@ -121,9 +121,9 @@ def generate_export_file(db_schema,db_table,local_path,base_filename,advanced_op
 
                     #set SQL cursor
                     if convert_to_julian:
-                        sql_data = "select * from {0}.{1} where {2} and {3} >= to_char(to_date({4},'YYYY-MM-DD'),'J') and {3} < to_char(to_date({5},'YYYY-MM-DD'),'J')".format(db_schema,db_table,where_clause,date_column,process_date_start,process_date_end)
+                        sql_data = "select * from {0}.{1} where {2} and {3} >= to_char(to_date('{4}','YYYYMMDD'),'J') and {3} < to_char(to_date('{5}','YYYYMMDD'),'J')".format(db_schema,db_table,where_clause,date_column,process_date_start,process_date_end)
                     else:
-                        sql_data = "select * from {0}.{1} where {2} and {3} >= to_date({4},'YYYY-MM-DD') and {3} < to_date({5},'YYYY-MM-DD')".format(db_schema,db_table,where_clause,date_column,process_date_start,process_date_end)
+                        sql_data = "select * from {0}.{1} where {2} and {3} >= to_date('{4}','YYYYMMDD') and {3} < to_date('{5}','YYYYMMDD')".format(db_schema,db_table,where_clause,date_column,process_date_start,process_date_end)
 
                     data_cursor = db_con.cursor()
                     data_cursor.execute(sql_data)
